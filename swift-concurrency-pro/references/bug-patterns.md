@@ -98,3 +98,10 @@ do {
 **Failure:** A class is marked `@unchecked Sendable` to suppress compiler errors, but its mutable `var` properties have no synchronization. The data race still exists at runtime.
 
 **Fix:** Restructure to use value types, use an `actor`, or move state behind a lock. See `bridging.md`.
+
+
+## Removing load-bearing concurrency wrappers
+
+**Failure:** A `withValue` or `withTaskCancellationHandler` call appears redundant and is removed. The code then fails to compile because the wrapper was providing a non-`@Sendable` closure scope that allowed capturing a non-Sendable type (e.g., `some AsyncSequence`).
+
+**Fix:** Before removing any concurrency wrapper, trace every role it serves: TaskLocal binding, Sendable boundary, ownership transfer, cancellation propagation. If it serves multiple roles, all must be addressed by the replacement. See `sendable-boundaries.md`.

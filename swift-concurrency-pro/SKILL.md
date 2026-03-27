@@ -19,6 +19,8 @@ Review process:
 1. Verify cancellation is handled correctly using `references/cancellation.md`.
 1. Validate async stream and continuation usage using `references/async-streams.md`.
 1. Check bridging code between sync and async worlds using `references/bridging.md`.
+1. Validate `@TaskLocal` usage: propagation rules, ordering with framework APIs, and Sendable boundary role using `references/task-locals.md`.
+1. Check for non-Sendable captures in Task closures using `references/sendable-boundaries.md`.
 1. Review any legacy concurrency migrations using `references/interop.md`.
 1. Cross-check against common failure modes using `references/bug-patterns.md`.
 1. If the project has strict-concurrency errors, map diagnostics to fixes using `references/diagnostics.md`.
@@ -120,5 +122,7 @@ End of example.
 - `references/bridging.md` - Checked continuations, wrapping legacy APIs, `@unchecked Sendable`.
 - `references/interop.md` - Migrating from GCD, `Mutex`/locks, completion handlers, delegates, and Combine.
 - `references/bug-patterns.md` - Common concurrency failure modes and their fixes.
+- `references/task-locals.md` - @TaskLocal propagation rules, ordering constraints with framework APIs, withValue as a Sendable boundary.
+- `references/sendable-boundaries.md` - Non-Sendable AsyncSequence in Tasks, withTaskCancellationHandler as capture scope, sending parameters.
 - `references/diagnostics.md` - Strict-concurrency compiler errors, protocol conformance fixes, and likely remedies.
 - `references/testing.md` - Async test strategy with Swift Testing, race detection, avoiding timing-based tests.
