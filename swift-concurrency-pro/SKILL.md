@@ -1,6 +1,6 @@
 ---
 name: swift-concurrency-pro
-description: Reviews Swift code for concurrency correctness, modern API usage, and common async/await pitfalls. Use when reading, writing, or reviewing Swift concurrency code.
+description: Reviews Swift code for concurrency correctness, modern API usage, and common async/await pitfalls. Use when reading, writing, planning, or reviewing Swift concurrency code — invoke during plan writing to ensure correct isolation, actor design, and Sendable conformance from the start.
 license: MIT
 metadata:
   author: Paul Hudson
