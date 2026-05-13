@@ -101,6 +101,19 @@ Review implications:
 - Do not suggest it for ordinary async I/O, which already suspends naturally.
 - If a function is `nonisolated` but still expected to run "in the background", check whether `@concurrent` is the missing piece.
 
+### Common misuse: `@concurrent` without genuine parallelism
+
+A method marked `@concurrent` whose body is one or two `await` calls into already-isolated state (`await screenModel.apply(...)` on an actor, `await self.update(...)` to MainActor) gains nothing. The target actor serializes regardless — `@concurrent` only adds executor hops (caller → global concurrent → target actor → back) without enabling parallelism.
+
+The cascade of bad consequences from over-using `@concurrent`:
+
+1. The `@concurrent` method can no longer directly mutate the class's state, so authors add `await self.update(...)` overloads to hop back to the owning actor.
+2. Those `update` calls can race with other MainActor work (e.g. a `reset()`) — queued updates fire mid-reset and overwrite freshly-cleared state.
+3. The race forces a generation counter (`var generation: UInt64`) and `guard generation == self.generation` gates on every `update`. Tens of lines of plumbing.
+4. None of this exists if the method is plain MainActor — process and reset serialize naturally on the same actor.
+
+Before adding `@concurrent`, ask: *"What runs in parallel with this?"* If the answer is "nothing — the awaits all hit isolated state", remove `@concurrent`. Default to inheriting class isolation (write nothing), or be explicit `@MainActor` if the method needs MainActor state directly. Reach for `@concurrent` only when there's a genuine parallelism win — multiple concurrent calls that don't serialize on a downstream actor.
+
 
 ## Starting tasks synchronously from caller context
 
