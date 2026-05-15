@@ -37,7 +37,7 @@ If doing a partial review, load only the relevant reference files.
 - Prefer Swift concurrency over Grand Central Dispatch for new code. GCD is still acceptable in low-level code, framework interop, or performance-critical synchronous work where queues and locks are the right tool – don't flag these as errors.
 - If an API offers both `async`/`await` and closure-based variants, always prefer `async`/`await`.
 - Do not introduce third-party concurrency frameworks without asking first.
-- Do not suggest `@unchecked Sendable` to fix compiler errors. It silences the diagnostic without fixing the underlying race. Prefer actors, value types, or `sending` parameters instead. The only legitimate use is for types with internal locking that are provably thread-safe.
+- `@unchecked Sendable` is acceptable for types with documented internal synchronization (locks, immutability). Do not suggest it as a silencer for compiler errors without verifying the synchronization invariant; in those cases, prefer actors, value types, or `sending` parameters.
 
 
 ## Output Format

@@ -49,6 +49,6 @@ func bridge(_ stream: sending some AsyncSequence<Element, Error>) {
 
 ## What NOT to do
 
-- **`nonisolated(unsafe)`** — banned. Always find a structural solution.
+- **`nonisolated(unsafe)`** — strongly discouraged. Find a structural solution first (actors, restructured ownership, Sendable-constrained protocols).
 - **`@unchecked Sendable`** — silences the diagnostic without fixing the race. Only for types with proven internal synchronization.
 - **Wrapper closures** — creating `@Sendable` closures that return non-Sendable values doesn't help; the capture is still non-Sendable.
