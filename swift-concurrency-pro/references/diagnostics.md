@@ -68,3 +68,4 @@ Likely fixes:
 
 1. **Move the use site onto the same actor.** If the consuming code can be `@MainActor`, the conformance is usable.
 2. **Remove the isolation from the conformance** if the protocol methods don't actually need actor-protected state.
+3. **Watch for *implicit* isolation in default-actor-isolation modules.** When the module sets `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, the `nonisolated` keyword on a *type declaration* does NOT propagate to its `extension`s. A member — or a nested type's *synthesized* `Equatable`/`Hashable`/`Codable` conformance — declared inside `extension NonisolatedType { … }` defaults back to `@MainActor`, producing this error with no `@MainActor` written anywhere. Fix: mark the extension itself `nonisolated extension NonisolatedType { … }` (or annotate each member). See `new-features.md` for default-isolation inference.
