@@ -40,7 +40,6 @@ By file. Per issue: (1) file + line(s), (2) rule violated, (3) brief before/afte
 // Before
 actor Cache {
     var items: [String: Data] = [:]
-
     func fetch(_ key: String) async throws -> Data {
         if items[key] == nil {
             items[key] = try await download(key)
@@ -52,7 +51,6 @@ actor Cache {
 // After
 actor Cache {
     var items: [String: Data] = [:]
-
     func fetch(_ key: String) async throws -> Data {
         if let existing = items[key] { return existing }
         let data = try await download(key)
@@ -67,13 +65,11 @@ actor Cache {
 for url in urls {
     Task { try await fetch(url) }
 }
-
 // After
 try await withThrowingTaskGroup(of: Data.self) { group in
     for url in urls {
         group.addTask { try await fetch(url) }
     }
-
     for try await result in group {
         process(result)
     }
