@@ -6,13 +6,8 @@ metadata:
   author: Paul Hudson
   version: "1.0.1"
 ---
-
-Review Swift concurrency for correctness, modern API usage, project conventions. Report genuine problems only — no nitpicks, no invented issues.
-
+Review Swift concurrency for correctness, modern API usage, project conventions. Report genuine problems only — no nitpicks, no invented issues. Review order = the table below, top to bottom; each reference file is authoritative and the table only a summary, so on a partial review load just the relevant rows.
 ## Review Order & References
-
-Top to bottom. The reference is authoritative, not this summary. Partial review: load only relevant rows.
-
 | # | Reference | Check / covers |
 |---|---|---|
 | 1 | `references/hotspots.md` | Grep targets: known-dangerous patterns + what to check for each. Scan first — prioritizes everything below |
@@ -29,27 +24,18 @@ Top to bottom. The reference is authoritative, not this summary. Partial review:
 | 12 | `references/bug-patterns.md` | Common concurrency failure modes + fixes — cross-check every review |
 | 13 | `references/diagnostics.md` | **If strict-concurrency errors:** map compiler diagnostics + protocol-conformance failures to fixes |
 | 14 | `references/testing.md` | **If reviewing tests:** Swift Testing async strategy, race detection, avoid timing-based tests |
-
 ## Core Instructions
-
 - Target Swift 6.2+ with strict concurrency checking.
-- **Multiple targets/packages:** compare their concurrency build settings before assuming behavior should match.
+- Code spanning multiple targets/packages → compare their concurrency build settings before assuming behavior should match.
 - Structured concurrency (task groups) over unstructured (`Task {}`).
-- Swift concurrency over GCD in new code. GCD stays acceptable in low-level code, framework interop, perf-critical synchronous work where queues/locks are the right tool — don't flag these as errors.
-- **API offers both `async`/`await` and closure-based variants:** always `async`/`await`.
+- Swift concurrency over GCD in new code — GCD stays acceptable in low-level code, framework interop, or perf-critical synchronous work where queues/locks are the right tool; don't flag those as errors.
+- API offering both `async`/`await` and closure-based variants → always `async`/`await`.
 - Never introduce third-party concurrency frameworks without asking first.
-- `@unchecked Sendable` only for types with documented internal synchronization (locks, immutability). Never to silence a compiler error without verifying the synchronization invariant — prefer actors, value types, `sending` parameters.
-
+- `@unchecked Sendable` only for types with documented internal synchronization (locks, immutability); never to silence a compiler error without verifying the synchronization invariant — prefer actors, value types, or `sending` parameters.
 ## Output Format
-
-By file. Per issue: (1) file + line(s), (2) rule violated, (3) brief before/after fix. Skip files with no issues. End with a prioritized summary — most impactful first.
-
-Example output:
-
+By file. Per issue: (1) file + line(s), (2) rule violated, (3) brief before/after fix. Skip files with no issues. End with a prioritized summary — most impactful first. Example:
 ### DataLoader.swift
-
 **Line 18: Actor reentrancy – state may have changed across the `await`.**
-
 ```swift
 // Before
 actor Cache {
@@ -75,9 +61,7 @@ actor Cache {
     }
 }
 ```
-
 **Line 34: Use `withTaskGroup` instead of creating tasks in a loop.**
-
 ```swift
 // Before
 for url in urls {
@@ -95,10 +79,6 @@ try await withThrowingTaskGroup(of: Data.self) { group in
     }
 }
 ```
-
 ### Summary
-
 1. **Correctness (high):** Actor reentrancy bug on line 18 may cause duplicate downloads and a force-unwrap crash.
 2. **Structure (medium):** Unstructured tasks in loop on line 34 lose cancellation propagation.
-
-End of example.
