@@ -64,15 +64,16 @@ Choose from:
 
 ## Don't reach for a stream to "add back pressure" to a callback
 
-Swift has no `yield` inside an `async` function, so a producer of many values over time has to give something up. There are three shapes and none dominates:
+Swift has no `yield` inside an `async` function, so a producer of many values over time has to give something up. There are four shapes and none dominates:
 
-| | producer reads straight-line | demand-driven (no buffer) | single task |
-|---|---|---|---|
-| non-escaping `emit:` closure parameter | yes | yes | yes |
-| `AsyncStream` + continuation | yes | **no** | **no** |
-| hand-written `AsyncSequence` iterator | **no** | yes | yes |
+| | producer reads straight-line | demand-driven (no buffer) | single task | consumer gets `for await` + combinators |
+|---|---|---|---|---|
+| non-escaping `emit:` closure parameter | yes | yes | yes | **no** |
+| `AsyncStream` + continuation | yes | **no** | **no** | yes |
+| hand-written `AsyncSequence` iterator | **no** | yes | yes | yes |
+| `AsyncChannel` (swift-async-algorithms) | yes | yes | **no** | yes |
 
-The common review error is to treat the first row as the one with a back-pressure problem. It is the opposite. A **non-escaping, synchronous** callback is called inline, and the producer cannot reach its next suspension point until the consumer's work has returned — the producer is strictly gated by the consumer and there is no queue anywhere, because nothing is decoupled.
+The common review error is to treat the first row as the one with a back-pressure problem. It is the opposite. A **non-escaping, synchronous** callback is called inline, and the producer cannot reach its next suspension point until the consumer's work has returned — the producer is strictly gated by the consumer and there is no queue anywhere, because nothing is decoupled. What it gives up is the last column: the consumer writes a callback body, not a `for await` loop, and cannot pipe the values through `map` / `debounce` / `chunked`.
 
 ```swift
 // STRONGEST back pressure of the three. `emit` is non-escaping and synchronous,
@@ -92,6 +93,29 @@ func monitor(_ event: Event) {
 ```
 
 "Push callbacks have no back pressure" is true only of the second form — escaping, stored, queue-dispatched. `AsyncStream` + continuation is in that family too: `yield` returns immediately and the buffer absorbs the difference, which is why the buffering policy above exists at all.
+
+### When you want back pressure *and* `for await`, use `AsyncChannel`
+
+`AsyncStream` is the wrong tool for adding back pressure, but the right tool exists — `AsyncChannel` from [swift-async-algorithms](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md). Its `send(_:)` is `async` and "suspends after enqueuing the event and is resumed when the next call to `next()` on the `Iterator` is made". There is no buffer, so "the rate of production cannot exceed the rate of consumption, and that the rate of consumption cannot exceed the rate of production" — back pressure in both directions.
+
+```swift
+// Back pressure across two tasks. `send` resumes only once the value is consumed.
+let channel = AsyncChannel<Event>()
+
+Task {
+    for event in wire {
+        try await Task.sleep(for: event.after)
+        await channel.send(event.payload)
+    }
+    channel.finish()
+}
+
+for await event in channel { consume(event) }
+```
+
+On these axes `AsyncChannel` strictly dominates `AsyncStream` + continuation — same straight-line producer, same `for await` consumer, same two tasks, but demand-driven instead of buffered. Reach for the stream when the producer is a non-`async` callback that cannot suspend (its actual purpose: bridging a non-concurrency context); reach for the channel when the producer *can* suspend and you want it gated.
+
+Two costs. It is a package dependency, not the stdlib. And it needs a second task — `send` suspends until a consumer calls `next()`, so producing and consuming in one task deadlocks. If you are already in one task and can accept a callback-shaped consumer, the non-escaping closure gets you the same gating with neither cost.
 
 ### Don't cite the delegate→`AsyncSequence` migration against a scoped closure
 
