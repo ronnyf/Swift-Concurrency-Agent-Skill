@@ -62,50 +62,43 @@ Choose from:
 - `.unbounded` is the default; use only when the consumer keeps up.
 
 
-## Don't reach for a stream to "add back pressure" to a callback
+## Choosing a shape for a producer of many values
 
 Swift has no `yield` inside an `async` function, so a producer of many values over time has to give something up. There are four shapes and none dominates:
 
-| | producer reads straight-line | demand-driven (no buffer) | single task | consumer gets `for await` + combinators |
-|---|---|---|---|---|
-| non-escaping `emit:` closure parameter | yes | yes | yes | **no** |
-| `AsyncStream` + continuation | yes | **no** | **no** | yes |
-| hand-written `AsyncSequence` iterator | **no** | yes | yes | yes |
-| `AsyncChannel` (swift-async-algorithms) | yes | yes | **no** | yes |
+| | producer reads straight-line | no buffer | producer/consumer overlap | single task | consumer gets `for await` + combinators |
+|---|---|---|---|---|---|
+| non-escaping `emit:` closure parameter | yes | yes | **no** | yes | **no** |
+| `AsyncStream` + continuation | yes | **no** | yes | **no** | yes |
+| hand-written `AsyncSequence` iterator | **no** | yes | **no** | yes | yes |
+| `AsyncChannel` (swift-async-algorithms) | yes | yes | yes | **no** | yes |
 
-The common review error is to treat the first row as the one with a back-pressure problem. It is the opposite. A **non-escaping, synchronous** callback is called inline, and the producer cannot reach its next suspension point until the consumer's work has returned — the producer is strictly gated by the consumer and there is no queue anywhere, because nothing is decoupled. What it gives up is the last column: the consumer writes a callback body, not a `for await` loop, and cannot pipe the values through `map` / `debounce` / `chunked`.
+**Non-escaping `emit:` closure.** A function call. The producer calls `emit` inline, the consumer's work runs as the producer's own continuation, and control returns — no buffer, no decoupling, no independent producer and consumer rates. Its costs are the two `no` columns: nothing pipelines, because the producer is stopped for the full duration of the consumer's work, and the consumer writes a callback body instead of a `for await` loop, so no `map` / `debounce` / `chunked`.
 
 ```swift
-// STRONGEST back pressure of the three. `emit` is non-escaping and synchronous,
-// so `drain` cannot advance past it until the consumer returns. No buffer exists.
 func drain(emit: (Event) -> Void) async throws {
     for event in wire {
         try await Task.sleep(for: event.after)
-        emit(event.payload)
+        emit(event.payload)   // runs as drain's own continuation
     }
-}
-
-// NO back pressure. The delegate hands off to a queue and returns immediately;
-// producer and consumer are decoupled, so the queue is free to grow.
-func monitor(_ event: Event) {
-    DispatchQueue.main.async { self.consume(event) }
 }
 ```
 
-"Push callbacks have no back pressure" is true only of the second form — escaping, stored, queue-dispatched. `AsyncStream` + continuation is in that family too: `yield` returns immediately and the buffer absorbs the difference, which is why the buffering policy above exists at all.
+**`AsyncStream` + continuation.** `yield` returns immediately and the buffer absorbs the difference between the two rates — hence the buffering policy above. Its purpose is bridging a producer that *cannot* suspend, such as a non-`async` delegate or a C callback, into concurrency. Reach for it for that, not for flow control.
 
-### When you want back pressure *and* `for await`, use `AsyncChannel`
+**Hand-written `AsyncSequence` iterator.** Costs more than it looks: the straight-line producer becomes a resumable state machine, with the program counter reified as a `Stage` enum and a `while true` + `switch` trampoline to resume it. Write `next(isolation:)` out in full before committing to this shape — a signature with the body left as a comment consistently underestimates it.
 
-`AsyncStream` is the wrong tool for adding back pressure, but the right tool exists — `AsyncChannel` from [swift-async-algorithms](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md). Its `send(_:)` is `async` and "suspends after enqueuing the event and is resumed when the next call to `next()` on the `Iterator` is made". There is no buffer, so "the rate of production cannot exceed the rate of consumption, and that the rate of consumption cannot exceed the rate of production" — back pressure in both directions.
+### `AsyncChannel` when you want flow control *and* `for await`
+
+`AsyncChannel` from [swift-async-algorithms](https://github.com/apple/swift-async-algorithms/blob/main/Sources/AsyncAlgorithms/AsyncAlgorithms.docc/Guides/Channel.md) is the type built for this. Its `send(_:)` is `async` and "suspends after enqueuing the event and is resumed when the next call to `next()` on the `Iterator` is made". There is no buffer, so "the rate of production cannot exceed the rate of consumption, and that the rate of consumption cannot exceed the rate of production".
 
 ```swift
-// Back pressure across two tasks. `send` resumes only once the value is consumed.
 let channel = AsyncChannel<Event>()
 
 Task {
     for event in wire {
         try await Task.sleep(for: event.after)
-        await channel.send(event.payload)
+        await channel.send(event.payload)   // resumes once consumed
     }
     channel.finish()
 }
@@ -113,17 +106,9 @@ Task {
 for await event in channel { consume(event) }
 ```
 
-On these axes `AsyncChannel` strictly dominates `AsyncStream` + continuation — same straight-line producer, same `for await` consumer, same two tasks, but demand-driven instead of buffered. Reach for the stream when the producer is a non-`async` callback that cannot suspend (its actual purpose: bridging a non-concurrency context); reach for the channel when the producer *can* suspend and you want it gated.
+On these axes `AsyncChannel` strictly dominates `AsyncStream` + continuation — same straight-line producer, same `for await` consumer, same two tasks, but unbuffered.
 
-Two costs. It is a package dependency, not the stdlib. And it needs a second task — `send` suspends until a consumer calls `next()`, so producing and consuming in one task deadlocks. If you are already in one task and can accept a callback-shaped consumer, the non-escaping closure gets you the same gating with neither cost.
-
-### Don't cite the delegate→`AsyncSequence` migration against a scoped closure
-
-Apple replaced `URLSessionDelegate`, `CLLocationManagerDelegate`, and `NotificationCenter` observers with `AsyncSequence`. Every one of those is a **stored, escaping, unbounded-lifetime** callback. Non-escaping closures whose lifetime is bounded by the enclosing call are a separate family Apple uses pervasively and has never migrated: `withTaskGroup { group in }`, `withTaskCancellationHandler(operation:onCancel:)`, `AsyncStream(unfolding:)`, `ImageRenderer.render { size, context in }`, `NSFileCoordinator.coordinate(byAccessor:)`.
-
-Lifetime is the discriminator, not "closure vs sequence". Before invoking the migration as an argument against a callback parameter, check whether the closure escapes. If it does not, the argument does not apply.
-
-Converting such a callback to a custom `AsyncSequence` also costs more than it looks: the straight-line producer becomes a resumable state machine, with the program counter reified as a `Stage` enum and a `while true` + `switch` trampoline to resume it. Recommend that conversion only after writing `next(isolation:)` out in full — a signature with the body left as a comment consistently underestimates it.
+Two costs. It is a package dependency, not the stdlib. And it needs a second task: `send` suspends until a consumer calls `next()`, so producing and consuming in one task deadlocks. In a single task the non-escaping closure is the only one of the four that works at all.
 
 
 ## `for await` and cancellation
