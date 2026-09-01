@@ -3,8 +3,8 @@
   "version": "1.0.7",
   "description": "Reviews Swift code for concurrency correctness, modern API usage, and common async/await pitfalls.",
   "author": { "name": "Paul Hudson" },
-  "homepage": "https://github.com/twostraws/Swift-Concurrency-Agent-Skill",
-  "repository": "https://github.com/twostraws/Swift-Concurrency-Agent-Skill",
+  "homepage": "https://github.com/ronnyf/Swift-Concurrency-Agent-Skill",
+  "repository": "https://github.com/ronnyf/Swift-Concurrency-Agent-Skill",
   "license": "MIT",
   "skills": "./skills/"
 }
