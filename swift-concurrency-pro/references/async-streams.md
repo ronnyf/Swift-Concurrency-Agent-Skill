@@ -64,25 +64,13 @@ Choose from:
 
 ## Choosing a shape for a producer of many values
 
-Swift has no `yield` inside an `async` function, so a producer of many values over time has to give something up. There are four shapes and none dominates:
+Swift has no `yield` inside an `async` function, so a producer of many values over time has to give something up. There are three shapes:
 
 | | producer reads straight-line | no buffer | producer/consumer overlap | single task | consumer gets `for await` + combinators |
 |---|---|---|---|---|---|
-| non-escaping `emit:` closure parameter | yes | yes | **no** | yes | **no** |
 | `AsyncStream` + continuation | yes | **no** | yes | **no** | yes |
 | hand-written `AsyncSequence` iterator | **no** | yes | **no** | yes | yes |
 | `AsyncChannel` (swift-async-algorithms) | yes | yes | yes | **no** | yes |
-
-**Non-escaping `emit:` closure.** A function call. The producer calls `emit` inline, the consumer's work runs as the producer's own continuation, and control returns — no buffer, no decoupling, no independent producer and consumer rates. Its costs are the two `no` columns: nothing pipelines, because the producer is stopped for the full duration of the consumer's work, and the consumer writes a callback body instead of a `for await` loop, so no `map` / `debounce` / `chunked`.
-
-```swift
-func drain(emit: (Event) -> Void) async throws {
-    for event in wire {
-        try await Task.sleep(for: event.after)
-        emit(event.payload)   // runs as drain's own continuation
-    }
-}
-```
 
 **`AsyncStream` + continuation.** `yield` returns immediately and the buffer absorbs the difference between the two rates — hence the buffering policy above. Its purpose is bridging a producer that *cannot* suspend, such as a non-`async` delegate or a C callback, into concurrency. Reach for it for that, not for flow control.
 
@@ -96,9 +84,8 @@ func drain(emit: (Event) -> Void) async throws {
 let channel = AsyncChannel<Event>()
 
 Task {
-    for event in wire {
-        try await Task.sleep(for: event.after)
-        await channel.send(event.payload)   // resumes once consumed
+    for try await event in wire {
+        await channel.send(event)   // resumes once consumed
     }
     channel.finish()
 }
@@ -108,7 +95,7 @@ for await event in channel { consume(event) }
 
 On these axes `AsyncChannel` strictly dominates `AsyncStream` + continuation — same straight-line producer, same `for await` consumer, same two tasks, but unbuffered.
 
-Two costs. It is a package dependency, not the stdlib. And it needs a second task: `send` suspends until a consumer calls `next()`, so producing and consuming in one task deadlocks. In a single task the non-escaping closure is the only one of the four that works at all.
+Two costs. It is a package dependency, not the stdlib. And it needs a second task: `send` suspends until a consumer calls `next()`, so producing and consuming in one task deadlocks.
 
 
 ## `for await` and cancellation
